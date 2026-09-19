@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/* KaTeX custom styling enhancements */
+.katex-display {
+  margin: 0.75em 0 !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0;
+}
+
+/* Custom smooth scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Reverse SyncTeX: Hover and click styles for preview elements */
+.latex-sync-node {
+  transition: all 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  border-radius: 4px;
+}
+
+.latex-sync-node:hover {
+  background-color: rgba(99, 102, 241, 0.08) !important;
+  box-shadow: 0 0 0 1.5px rgba(99, 102, 241, 0.35);
+  cursor: pointer;
+}
+
+/* Flash animation for jumped code line in Code Editor */
+@keyframes codeLinePulse {
+  0% {
+    background-color: rgba(253, 224, 71, 0.85);
+    box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.6);
+  }
+  30% {
+    background-color: rgba(254, 240, 138, 0.7);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.line-flash-highlight {
+  animation: codeLinePulse 2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+/* Forward SyncTeX: Flash animation for focused preview node */
+@keyframes forwardSyncPulse {
+  0% {
+    background-color: rgba(99, 102, 241, 0.25);
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.5);
+  }
+  40% {
+    background-color: rgba(99, 102, 241, 0.15);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.forward-sync-flash {
+  animation: forwardSyncPulse 2.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  border-radius: 4px;
+}
+
+/* Print stylesheet for PDF generation */
+@media print {
+  body {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  header,
+  .no-print,
+  button {
+    display: none !important;
+  }
+  .latex-preview-content {
+    font-size: 11pt !important;
+    line-height: 1.6 !important;
+  }
+}

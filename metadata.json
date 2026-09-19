@@ -1,0 +1,6 @@
+{
+  "name": "LaTeX Editor",
+  "description": "本地实时预览 LaTeX 编辑器，提供语法高亮、工作区文件树、实时渲染预览与常规编辑功能。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
