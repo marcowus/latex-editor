@@ -6,13 +6,15 @@ import { PreviewPane } from './components/PreviewPane';
 import { TableWizardModal } from './components/TableWizardModal';
 import { MathPaletteModal } from './components/MathPaletteModal';
 import { WordCountModal } from './components/WordCountModal';
-import { SnapshotManagerModal } from './components/SnapshotManagerModal';
+import { HistoryModal } from './components/HistoryModal';
 import { LLMAssistantPanel } from './components/LLMAssistantPanel';
 import { LLMDocModal } from './components/LLMDocModal';
 import { ImportZipModal } from './components/ImportZipModal';
 import { ExportMdModal } from './components/ExportMdModal';
 import { ZoteroModal } from './components/ZoteroModal';
 import { FileItem, FileType, WorkspaceState, CompileResult, LatexEngine } from './types/latex';
+import { HistoryRecord, MilestoneSnapshot, HistorySource } from './types/history';
+import { createHistoryRecord } from './utils/diffSummarizer';
 import { TEMPLATES } from './data/templates';
 import { compileLatex } from './utils/latexParser';
 import { extractBibEntries, extractLabels } from './utils/bibParser';
@@ -20,6 +22,8 @@ import { exportWorkspaceAsZip } from './utils/zipExporter';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 
 const STORAGE_KEY = 'latex_studio_workspace_v2';
+const HISTORY_STORAGE_KEY = 'latex_editor_history_records_v1';
+const SNAPSHOT_STORAGE_KEY = 'latex_editor_snapshots_v1';
 
 // Helper to construct initial workspace from template
 function createWorkspaceFromTemplate(templateId: string): WorkspaceState {
@@ -137,6 +141,53 @@ export default function App() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 2800);
   };
+
+  // History records state (auto-tracked)
+  const [historyRecords, setHistoryRecords] = useState<HistoryRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  // Milestone snapshots state (user-named)
+  const [snapshots, setSnapshots] = useState<MilestoneSnapshot[]>(() => {
+    try {
+      const saved = localStorage.getItem(SNAPSHOT_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  const lastRecordedFilesRef = useRef<Record<string, FileItem>>(
+    JSON.parse(JSON.stringify(workspace.files))
+  );
+  const historyDebounceTimerRef = useRef<number | null>(null);
+
+  // Persist history records (top 20 to preserve localStorage quota)
+  useEffect(() => {
+    try {
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(historyRecords.slice(0, 20)));
+    } catch (e) {
+      console.warn('Failed to save history records to localStorage:', e);
+    }
+  }, [historyRecords]);
+
+  // Persist snapshots
+  useEffect(() => {
+    try {
+      localStorage.setItem(SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshots.slice(0, 30)));
+    } catch (e) {
+      console.warn('Failed to save snapshots to localStorage:', e);
+    }
+  }, [snapshots]);
 
   // Save to LocalStorage on workspace changes
   useEffect(() => {
@@ -267,24 +318,72 @@ export default function App() {
     }
   };
 
+  // Helper to record history changes with automatic diff & LaTeX semantic summaries
+  const recordHistoryChange = (
+    nextFiles: Record<string, FileItem>,
+    source: HistorySource,
+    customSummary?: string,
+    immediate = false,
+    activeId?: string,
+    rootIds?: string[]
+  ) => {
+    const targetActiveId = activeId || workspace.activeFileId;
+    const targetRootIds = rootIds || workspace.rootIds;
+
+    const doRecord = () => {
+      const record = createHistoryRecord(
+        lastRecordedFilesRef.current,
+        nextFiles,
+        targetActiveId,
+        targetRootIds,
+        source,
+        customSummary
+      );
+      if (record) {
+        lastRecordedFilesRef.current = JSON.parse(JSON.stringify(nextFiles));
+        setHistoryRecords(prev => [record, ...prev.slice(0, 49)]);
+      }
+    };
+
+    if (immediate) {
+      if (historyDebounceTimerRef.current) {
+        clearTimeout(historyDebounceTimerRef.current);
+        historyDebounceTimerRef.current = null;
+      }
+      doRecord();
+    } else {
+      if (historyDebounceTimerRef.current) {
+        clearTimeout(historyDebounceTimerRef.current);
+      }
+      historyDebounceTimerRef.current = window.setTimeout(() => {
+        doRecord();
+        historyDebounceTimerRef.current = null;
+      }, 1200);
+    }
+  };
+
   // Handle active file content update from CodeEditor
-  const handleUpdateContent = (newContent: string) => {
+  const handleUpdateContent = (newContent: string, source: HistorySource = 'manual', customSummary?: string) => {
     if (!activeFile) return;
+
+    const nextFiles = {
+      ...workspace.files,
+      [activeFile.id]: {
+        ...activeFile,
+        content: newContent,
+      },
+    };
 
     setWorkspace(prev => ({
       ...prev,
-      files: {
-        ...prev.files,
-        [activeFile.id]: {
-          ...activeFile,
-          content: newContent,
-        },
-      },
+      files: nextFiles,
     }));
 
     if (workspace.diskPath) {
       syncFileContentToDisk(activeFile.path, newContent);
     }
+
+    recordHistoryChange(nextFiles, source, customSummary, source !== 'manual');
   };
 
   // Insert snippet from Table Wizard or Math Palette modal into active document
@@ -292,7 +391,7 @@ export default function App() {
     if (!activeFile) return;
     const cur = activeFile.content || '';
     const updated = cur.endsWith('\n') ? cur + snippet + '\n' : cur + '\n\n' + snippet + '\n';
-    handleUpdateContent(updated);
+    handleUpdateContent(updated, 'wizard', '向正文插入代码片段/图表');
     showToast('已将代码片段插入当前文件末尾');
   };
 
@@ -319,6 +418,7 @@ export default function App() {
             files: loaded.files,
             rootIds: loaded.rootIds,
           }));
+          recordHistoryChange(loaded.files, 'zotero', `追加参考文献至 ${filename}`, true);
         }
       } catch (err) {
         console.warn('Failed to reload workspace after bib append:', err);
@@ -333,7 +433,7 @@ export default function App() {
       insertSnippetRef.current(code);
       showToast('已由 AI 助手在光标处插入代码');
     } else {
-      handleUpdateContent(code);
+      handleUpdateContent(code, 'ai', 'AI 助手写入 LaTeX 代码');
       showToast('已由 AI 助手将代码写入当前编辑区');
     }
   };
@@ -397,6 +497,7 @@ export default function App() {
             isOpen: true,
           };
         }
+        recordHistoryChange(updatedFiles, 'ai', `AI 助手创建文件: ${cleanPath}`, true, newFileId);
         return {
           ...prev,
           files: updatedFiles,
@@ -425,12 +526,16 @@ export default function App() {
       parentId: null,
     };
 
-    setWorkspace((prev) => ({
-      ...prev,
-      files: { ...prev.files, [newFileId]: newFile },
-      rootIds: [...prev.rootIds, newFileId],
-      activeFileId: newFileId,
-    }));
+    setWorkspace((prev) => {
+      const updatedFiles = { ...prev.files, [newFileId]: newFile };
+      recordHistoryChange(updatedFiles, 'ai', `AI 助手创建文件: ${cleanPath}`, true, newFileId, [...prev.rootIds, newFileId]);
+      return {
+        ...prev,
+        files: updatedFiles,
+        rootIds: [...prev.rootIds, newFileId],
+        activeFileId: newFileId,
+      };
+    });
     showToast(`已由 AI 助手创建文件: ${cleanPath}`);
     if (workspace.diskPath) {
       syncFileCreateToDisk(newFile.path, fileType, content);
@@ -447,16 +552,18 @@ export default function App() {
     );
 
     if (matched) {
+      const nextFiles = {
+        ...workspace.files,
+        [matched.id]: {
+          ...matched,
+          content,
+        },
+      };
       setWorkspace((prev) => ({
         ...prev,
-        files: {
-          ...prev.files,
-          [matched.id]: {
-            ...matched,
-            content,
-          },
-        },
+        files: nextFiles,
       }));
+      recordHistoryChange(nextFiles, 'ai', `AI 助手更新文件: ${cleanPath}`, true, matched.id);
       showToast(`已由 AI 助手更新文件: ${cleanPath}`);
       if (workspace.diskPath) {
         syncFileContentToDisk(matched.path, content);
@@ -536,6 +643,15 @@ export default function App() {
         updatedRootIds.push(newId);
       }
 
+      recordHistoryChange(
+        updatedFiles,
+        'manual',
+        `新建${type === 'folder' ? '目录' : '文件'}: ${name}`,
+        true,
+        type !== 'folder' ? newId : prev.activeFileId,
+        updatedRootIds
+      );
+
       return {
         ...prev,
         files: updatedFiles,
@@ -572,6 +688,15 @@ export default function App() {
       const remainingIds = Object.keys(updatedFiles).filter(id => updatedFiles[id].type !== 'folder');
       const nextActive = remainingIds.length > 0 ? remainingIds[0] : '';
 
+      recordHistoryChange(
+        updatedFiles,
+        'manual',
+        `删除文件: ${target.name}`,
+        true,
+        prev.activeFileId === fileId ? nextActive : prev.activeFileId,
+        updatedRootIds
+      );
+
       return {
         ...prev,
         files: updatedFiles,
@@ -601,6 +726,7 @@ export default function App() {
   const handleLoadTemplate = (templateId: string) => {
     const nextWs = createWorkspaceFromTemplate(templateId);
     setWorkspace(nextWs);
+    recordHistoryChange(nextWs.files, 'template', `加载工程模板: ${templateId}`, true, nextWs.activeFileId, nextWs.rootIds);
     const mainFile = Object.values(nextWs.files).find(f => f.name === 'main.tex') || Object.values(nextWs.files)[0];
     runCompile(mainFile?.content || '', true);
     showToast('已加载工程模板');
@@ -649,12 +775,68 @@ export default function App() {
     }
   };
 
-  // Restore snapshot handler
-  const handleRestoreWorkspace = (restored: WorkspaceState) => {
+  // Restore history record or milestone snapshot handler with non-destructive backup
+  const handleRestoreWorkspace = (restored: WorkspaceState, notice?: string) => {
+    // 1. Create a safe pre-rollback backup so the user never loses their current workspace!
+    const rollbackBackup = createHistoryRecord(
+      lastRecordedFilesRef.current,
+      workspace.files,
+      workspace.activeFileId,
+      workspace.rootIds,
+      'rollback',
+      '回退前自动安全备份 (可随时再次恢复)'
+    );
+    if (rollbackBackup) {
+      setHistoryRecords(prev => [rollbackBackup, ...prev.slice(0, 49)]);
+    }
+
+    // 2. Set restored workspace
     setWorkspace(restored);
+    lastRecordedFilesRef.current = JSON.parse(JSON.stringify(restored.files));
+
+    // 3. Physical disk sync if configured
+    if (workspace.diskPath) {
+      Object.values(restored.files).forEach(f => {
+        if (f.type !== 'folder' && f.content !== undefined) {
+          syncFileContentToDisk(f.path, f.content);
+        }
+      });
+    }
+
+    // 4. Trigger compilation
     const mainFile = Object.values(restored.files).find(f => f.name === 'main.tex') || Object.values(restored.files)[0];
     runCompile(mainFile?.content || '', true);
-    showToast('已成功还原至历史版本快照');
+
+    showToast(notice || '已成功回退至所选版本（已自动创建回退前备份）');
+  };
+
+  // Milestone snapshot handlers
+  const handleCreateMilestoneSnapshot = (name: string, description?: string) => {
+    const newSnapshot: MilestoneSnapshot = {
+      id: `snap_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name,
+      description,
+      timestamp: Date.now(),
+      fileCount: Object.values(workspace.files).filter(f => f.type !== 'folder').length,
+      files: JSON.parse(JSON.stringify(workspace.files)),
+      activeFileId: workspace.activeFileId,
+      rootIds: [...workspace.rootIds],
+    };
+    setSnapshots(prev => [newSnapshot, ...prev]);
+    showToast(`已成功保存里程碑快照: 「${name}」`);
+  };
+
+  const handleDeleteMilestoneSnapshot = (id: string) => {
+    setSnapshots(prev => prev.filter(s => s.id !== id));
+    showToast('已删除里程碑快照');
+  };
+
+  const handleClearHistory = () => {
+    setHistoryRecords([]);
+    try {
+      localStorage.removeItem(HISTORY_STORAGE_KEY);
+    } catch {}
+    showToast('已清空修改历史记录');
   };
 
   // Jump from diagnostic to line
@@ -723,6 +905,7 @@ export default function App() {
         onDownloadCurrentTex={handleDownloadActiveTex}
         onOpenWordCount={() => setShowWordCount(true)}
         onOpenSnapshots={() => setShowSnapshots(true)}
+        historyCount={historyRecords.length}
         onExportZip={handleExportZip}
         onOpenExportMd={() => setShowExportMdModal(true)}
         onOpenImportZip={() => setShowImportZipModal(true)}
@@ -742,7 +925,7 @@ export default function App() {
             <FileTree
               workspace={workspace}
               onSelectFile={handleSelectFile}
-              onUpdateFile={handleUpdateContent}
+              onUpdateFile={(_fileId, content) => handleUpdateContent(content)}
               onCreateFile={handleCreateFile}
               onDeleteFile={handleDeleteFile}
               onRenameFile={handleRenameFile}
@@ -840,11 +1023,17 @@ export default function App() {
         workspace={workspace}
       />
 
-      <SnapshotManagerModal
+      {/* History and Milestone Snapshot Manager Modal */}
+      <HistoryModal
         isOpen={showSnapshots}
         onClose={() => setShowSnapshots(false)}
         workspace={workspace}
+        historyRecords={historyRecords}
+        snapshots={snapshots}
         onRestoreWorkspace={handleRestoreWorkspace}
+        onCreateSnapshot={handleCreateMilestoneSnapshot}
+        onDeleteSnapshot={handleDeleteMilestoneSnapshot}
+        onClearHistory={handleClearHistory}
       />
 
       {/* LLM API Documentation Modal */}

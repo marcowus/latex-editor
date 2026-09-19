@@ -34,6 +34,7 @@ interface HeaderProps {
   onDownloadCurrentTex: () => void;
   onOpenWordCount?: () => void;
   onOpenSnapshots?: () => void;
+  historyCount?: number;
   onExportZip?: () => void;
   onOpenExportMd?: () => void;
   onOpenImportZip?: () => void;
@@ -58,6 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
   onDownloadCurrentTex,
   onOpenWordCount,
   onOpenSnapshots,
+  historyCount,
   onExportZip,
   onOpenExportMd,
   onOpenImportZip,
@@ -174,11 +176,16 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={onOpenSnapshots}
-            title="版本快照与历史还原"
-            className="px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded flex items-center gap-1 transition-colors"
+            title="查看历史修改记录摘要、代码 Diff 与安全回退"
+            className="px-2.5 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded flex items-center gap-1.5 transition-colors group"
           >
-            <History className="w-3.5 h-3.5 text-amber-400" />
-            <span className="hidden md:inline">版本快照</span>
+            <History className="w-3.5 h-3.5 text-amber-400 group-hover:rotate-[-30deg] transition-transform" />
+            <span className="hidden md:inline">修改历史</span>
+            {historyCount !== undefined && historyCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold">
+                {historyCount}
+              </span>
+            )}
           </button>
         )}
       </div>
