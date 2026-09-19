@@ -9,7 +9,8 @@ import { createServer as createViteServer } from 'vite';
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
+const LISTEN_HOST = process.env.LATEX_EDITOR_HOST || '127.0.0.1';
 
 // Middleware for parsing JSON with generous limit for LaTeX documents and ZIP archives
 app.use(express.json({ limit: '100mb' }));
@@ -1361,7 +1362,376 @@ The major contributions of this paper are summarized as follows:
 }
 
 // -------------------------------------------------------------
-// 5. Start Server with Vite Middleware in Dev or Static in Production
+// 6. Zotero MCP & Better BibTeX Integration Gateway
+// -------------------------------------------------------------
+const ZOTERO_MCP_URL = process.env.ZOTERO_MCP_URL || 'http://127.0.0.1:23120/mcp';
+const ZOTERO_BBT_URL = process.env.ZOTERO_BBT_URL || 'http://127.0.0.1:23119';
+
+function redactServiceUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    parsed.username = '';
+    parsed.password = '';
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return 'configured';
+  }
+}
+
+function isWithinDirectory(parentDir: string, targetPath: string): boolean {
+  const relativePath = path.relative(path.resolve(parentDir), path.resolve(targetPath));
+  return relativePath === '' || (!relativePath.startsWith('..' + path.sep) && relativePath !== '..' && !path.isAbsolute(relativePath));
+}
+
+function validateBibFilename(filename: unknown): string {
+  if (typeof filename !== 'string' || !/^[A-Za-z0-9._-]+\.bib$/i.test(filename)) {
+    throw new Error('仅允许写入当前工程根目录中的 .bib 文件');
+  }
+  return filename;
+}
+
+async function callZoteroMcp(method: string, params: any): Promise<any> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(ZOTERO_MCP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method: method,
+        params: params,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      throw new Error(`Zotero MCP 请求失败: ${response.status} ${response.statusText}`);
+    }
+    const data: any = await response.json();
+    if (data.error) {
+      throw new Error(data.error.message || 'Zotero MCP 返回错误');
+    }
+    return data.result;
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+
+// Generate clean citekey: e.g. "khalil2002nonlinear"
+function formatCiteKey(item: any): string {
+  if (item.citekey || item.citationKey) return item.citekey || item.citationKey;
+
+  let authorPart = 'author';
+  if (Array.isArray(item.creators) && item.creators.length > 0) {
+    const firstCreator = item.creators[0];
+    authorPart = (firstCreator.lastName || firstCreator.name || 'author')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  } else if (typeof item.creators === 'string' && item.creators.trim()) {
+    const firstPerson = item.creators.split(',')[0].trim();
+    const lastName = firstPerson.split(/\s+/).pop() || firstPerson;
+    authorPart = lastName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'author';
+  }
+
+  let yearPart = '';
+  if (item.date) {
+    const yearMatch = item.date.match(/\b(19\d\d|20\d\d)\b/);
+    if (yearMatch) yearPart = yearMatch[1];
+  }
+
+  let titlePart = '';
+  if (item.title) {
+    const words = item.title.trim().split(/\s+/);
+    for (const w of words) {
+      const cleanWord = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanWord.length > 3 && !['with', 'from', 'that', 'this', 'using', 'based'].includes(cleanWord)) {
+        titlePart = cleanWord;
+        break;
+      }
+    }
+    if (!titlePart && words.length > 0) {
+      titlePart = words[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+  }
+
+  return `${authorPart}${yearPart}${titlePart}` || `zotero_${item.key || Date.now()}`;
+}
+
+// Format item metadata to standard BibTeX entry
+function generateBibtexFromItem(item: any): { citekey: string; bibtex: string } {
+  const citekey = formatCiteKey(item);
+  const itemType = (item.itemType || '').toLowerCase();
+
+  let entryType = 'article';
+  if (itemType === 'conferencepaper' || itemType === 'proceedings') {
+    entryType = 'inproceedings';
+  } else if (itemType === 'book') {
+    entryType = 'book';
+  } else if (itemType === 'thesis' || itemType === 'phdthesis') {
+    entryType = 'phdthesis';
+  }
+
+  let authorsStr = '';
+  if (Array.isArray(item.creators) && item.creators.length > 0) {
+    authorsStr = item.creators
+      .map((c: any) => {
+        if (c.lastName && c.firstName) return `${c.lastName}, ${c.firstName}`;
+        return c.name || `${c.firstName || ''} ${c.lastName || ''}`.trim();
+      })
+      .filter(Boolean)
+      .join(' and ');
+  } else if (typeof item.creators === 'string' && item.creators.trim()) {
+    authorsStr = item.creators.replace(/,\s*/g, ' and ');
+  }
+
+  let yearStr = '';
+  if (item.date) {
+    const yearMatch = item.date.match(/\b(19\d\d|20\d\d)\b/);
+    if (yearMatch) yearStr = yearMatch[1];
+  }
+
+  const lines: string[] = [`@${entryType}{${citekey},`];
+  if (authorsStr) lines.push(`  author    = {${authorsStr}},`);
+  if (item.title) lines.push(`  title     = {{${item.title}}},`);
+  if (entryType === 'article' && (item.publicationTitle || item.journal)) {
+    lines.push(`  journal   = {${item.publicationTitle || item.journal}},`);
+  } else if (entryType === 'inproceedings' && (item.publicationTitle || item.bookTitle)) {
+    lines.push(`  booktitle = {${item.publicationTitle || item.bookTitle}},`);
+  }
+  if (yearStr) lines.push(`  year      = {${yearStr}},`);
+  if (item.volume) lines.push(`  volume    = {${item.volume}},`);
+  if (item.issue) lines.push(`  number    = {${item.issue}},`);
+  if (item.pages) lines.push(`  pages     = {${item.pages}},`);
+  if (item.doi) lines.push(`  doi       = {${item.doi}},`);
+  if (item.url && !item.doi) lines.push(`  url       = {${item.url}},`);
+
+  // Remove trailing comma from last field
+  const lastIdx = lines.length - 1;
+  if (lines[lastIdx].endsWith(',')) {
+    lines[lastIdx] = lines[lastIdx].slice(0, -1);
+  }
+  lines.push('}');
+
+  return { citekey, bibtex: lines.join('\n') };
+}
+
+// 1. Check Zotero MCP status and Better BibTeX availability
+app.get('/api/zotero/status', async (_req: Request, res: Response) => {
+  let mcpConnected = false;
+  let mcpInfo: any = null;
+  let bbtAvailable = false;
+
+  // Probe MCP Status
+  try {
+    const mcpStatusRes = await fetch(`${ZOTERO_MCP_URL}/status`, { signal: AbortSignal.timeout(2000) });
+    if (mcpStatusRes.ok) {
+      mcpInfo = await mcpStatusRes.json();
+      mcpConnected = true;
+    }
+  } catch {}
+
+  // If status endpoint did not respond, try ping
+  if (!mcpConnected) {
+    try {
+      const pingResult = await callZoteroMcp('ping', {});
+      if (pingResult) {
+        mcpConnected = true;
+        mcpInfo = { serverInfo: { name: 'zotero-integrated-mcp', version: '1.1.0' } };
+      }
+    } catch {}
+  }
+
+  // Probe Better BibTeX port
+  try {
+    const bbtRes = await fetch(`${ZOTERO_BBT_URL}/better-bibtex/cayw?format=translate`, {
+      signal: AbortSignal.timeout(1000),
+    });
+    // Even if it returns 400 or 404, it means the server is listening
+    bbtAvailable = bbtRes.status < 500;
+  } catch {}
+
+  res.json({
+    connected: mcpConnected,
+    mcpUrl: redactServiceUrl(ZOTERO_MCP_URL),
+    bbtUrl: redactServiceUrl(ZOTERO_BBT_URL),
+    mcpInfo: mcpInfo,
+    bbtAvailable: bbtAvailable,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// 2. Search Zotero library via MCP tool
+app.post('/api/zotero/search', async (req: Request, res: Response) => {
+  try {
+    const { query, limit = 40 } = req.body;
+    if (!query || typeof query !== 'string') {
+      res.status(400).json({ error: '请提供查询关键词 query' });
+      return;
+    }
+
+    const safeLimit = Math.min(Math.max(Number(limit) || 40, 1), 50);
+    const mcpResult = await callZoteroMcp('tools/call', {
+      name: 'search_library',
+      arguments: {
+        query: query.trim(),
+        limit: String(safeLimit),
+      },
+    });
+
+    const contentText = mcpResult?.content?.[0]?.text;
+    if (!contentText) {
+      res.json({ items: [], total: 0 });
+      return;
+    }
+
+    let parsedData: any;
+    try {
+      parsedData = JSON.parse(contentText);
+    } catch {
+      res.json({ items: [], total: 0 });
+      return;
+    }
+
+    const rawResults = parsedData.results || [];
+    const items = rawResults.map((raw: any) => {
+      const citekey = formatCiteKey(raw);
+      return {
+        key: raw.key,
+        title: raw.title || 'Untitled',
+        itemType: raw.itemType || 'document',
+        date: raw.date || '',
+        year: raw.date ? (raw.date.match(/\b(19\d\d|20\d\d)\b/)?.[1] || '') : '',
+        publicationTitle: raw.publicationTitle || raw.journal || '',
+        doi: raw.doi || '',
+        url: raw.url || (raw.key ? `zotero://select/library/items/${raw.key}` : ''),
+        creators: raw.creators || [],
+        authorSummary: Array.isArray(raw.creators)
+          ? raw.creators.map((c: any) => c.lastName || c.name || '').filter(Boolean).join(', ')
+          : typeof raw.creators === 'string'
+          ? raw.creators
+          : '',
+        citekey: citekey,
+      };
+    });
+
+    res.json({
+      items,
+      total: parsedData.pagination?.total || items.length,
+      searchTime: parsedData.searchTime,
+    });
+  } catch (error: any) {
+    console.error('Zotero search error:', error);
+    res.status(500).json({ error: error.message || '搜索 Zotero 文献失败' });
+  }
+});
+
+// 3. Get item metadata details
+app.post('/api/zotero/item-details', async (req: Request, res: Response) => {
+  try {
+    const { itemKey } = req.body;
+    if (!itemKey) {
+      res.status(400).json({ error: '请提供 itemKey' });
+      return;
+    }
+
+    const mcpResult = await callZoteroMcp('tools/call', {
+      name: 'get_item_details',
+      arguments: { itemKey },
+    });
+
+    const contentText = mcpResult?.content?.[0]?.text;
+    let itemData: any = {};
+    try {
+      itemData = JSON.parse(contentText || '{}');
+    } catch {
+      itemData = { key: itemKey };
+    }
+
+    const { citekey, bibtex } = generateBibtexFromItem(itemData);
+
+    res.json({
+      details: itemData,
+      citekey,
+      bibtex,
+    });
+  } catch (error: any) {
+    console.error('Zotero item details error:', error);
+    res.status(500).json({ error: error.message || '获取文献详情失败' });
+  }
+});
+
+// 4. Safely append BibTeX entry to project's references.bib
+app.post('/api/zotero/append-bib', async (req: Request, res: Response) => {
+  try {
+    const { item, bibtex: customBibtex, targetDir, filename = 'references.bib' } = req.body;
+    if (!item && !customBibtex) {
+      res.status(400).json({ error: '缺少文献信息或 bibtex 内容' });
+      return;
+    }
+
+    const safeFilename = validateBibFilename(filename);
+    const { citekey, bibtex } = customBibtex
+      ? { citekey: formatCiteKey(item || {}), bibtex: customBibtex }
+      : generateBibtexFromItem(item);
+
+    // Write only to an explicitly supplied project below the managed workspace.
+    // The front end passes workspace.diskPath when the user has opened a disk project.
+    const destDir = path.resolve(
+      typeof targetDir === 'string' && targetDir.trim()
+        ? targetDir
+        : path.join(E_WORKSPACE_BASE, 'latex_project'),
+    );
+    if (!isWithinDirectory(E_WORKSPACE_BASE, destDir)) {
+      res.status(403).json({ error: '只能写入 E:\\latex_workspace 下的工程目录' });
+      return;
+    }
+    fs.mkdirSync(destDir, { recursive: true });
+
+    const bibFilePath = path.resolve(destDir, safeFilename);
+    if (!isWithinDirectory(destDir, bibFilePath)) {
+      res.status(403).json({ error: '禁止跨工程写入 BibTeX 文件' });
+      return;
+    }
+    let existingContent = '';
+    if (fs.existsSync(bibFilePath)) {
+      existingContent = fs.readFileSync(bibFilePath, 'utf-8');
+    }
+
+    // Check if citekey already exists
+    const keyRegex = new RegExp(`@[a-zA-Z]+\\s*\\{\\s*${citekey}\\s*,`, 'i');
+    if (keyRegex.test(existingContent)) {
+      res.json({
+        status: 'already_exists',
+        citekey,
+        message: `文献引用键 [${citekey}] 已存在于 ${safeFilename} 中，未重复添加。`,
+        filename: safeFilename,
+      });
+      return;
+    }
+
+    // Append to file
+    const separator = existingContent.trim().length > 0 ? '\n\n' : '';
+    const updatedContent = `${existingContent.trimEnd()}${separator}${bibtex}\n`;
+    fs.writeFileSync(bibFilePath, updatedContent, 'utf-8');
+
+    res.json({
+      status: 'appended',
+      citekey,
+      bibtex,
+      message: `成功将文献 [${citekey}] 追加至 ${safeFilename}！`,
+      filename: safeFilename,
+    });
+  } catch (error: any) {
+    console.error('Append bib error:', error);
+    res.status(500).json({ error: error.message || '追加文献库失败' });
+  }
+});
+
+// -------------------------------------------------------------
+// 7. Start Server with Vite Middleware in Dev or Static in Production
 // -------------------------------------------------------------
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
@@ -1378,8 +1748,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`LaTeX Editor & LLM Gateway running on http://127.0.0.1:${PORT}`);
+  app.listen(PORT, LISTEN_HOST, () => {
+    console.log(`LaTeX Editor & LLM Gateway running on http://${LISTEN_HOST}:${PORT}`);
     console.log(`Active LLM Provider: ${activeConfig.provider} (Model: ${activeConfig.model})`);
   });
 }

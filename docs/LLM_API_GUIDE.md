@@ -2,6 +2,10 @@
 
 本文档详细介绍了本 LaTeX 编辑器提供的大语言模型（LLM）集成接口、动作通信协议（Action Protocol）、文件系统自动化操作机制以及外部 HTTP/cURL 调用示例。
 
+> v0.1.0 release note: the gateway supports configurable provider integrations, including the bundled Gemini path, DeepSeek, SiliconFlow, and a custom OpenAI-compatible endpoint. Check the running service status for the actually configured provider. Model-specific examples in this document are illustrative, not a promise that a provider, a model, or an output is available or correct.
+>
+> Treat every proposed file action as a reviewable change. Do not send credentials, unpublished papers, or sensitive data to an external provider without assessing its data policy.
+
 ---
 
 ## 目录

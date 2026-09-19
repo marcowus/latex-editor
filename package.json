@@ -1,7 +1,28 @@
 {
-  "name": "react-example",
+  "name": "latex-editor",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "AI-assisted local LaTeX workspace for technical-paper writing.",
+  "license": "Apache-2.0",
+  "author": "marcowus",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcowus/latex-editor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/marcowus/latex-editor/issues"
+  },
+  "homepage": "https://github.com/marcowus/latex-editor#readme",
+  "keywords": [
+    "latex",
+    "academic-writing",
+    "research-tools",
+    "control-systems",
+    "ieee",
+    "llm",
+    "react",
+    "typescript"
+  ],
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -34,7 +55,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.2",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",

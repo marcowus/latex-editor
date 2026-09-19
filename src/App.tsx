@@ -11,6 +11,7 @@ import { LLMAssistantPanel } from './components/LLMAssistantPanel';
 import { LLMDocModal } from './components/LLMDocModal';
 import { ImportZipModal } from './components/ImportZipModal';
 import { ExportMdModal } from './components/ExportMdModal';
+import { ZoteroModal } from './components/ZoteroModal';
 import { FileItem, FileType, WorkspaceState, CompileResult, LatexEngine } from './types/latex';
 import { TEMPLATES } from './data/templates';
 import { compileLatex } from './utils/latexParser';
@@ -116,6 +117,7 @@ export default function App() {
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [showImportZipModal, setShowImportZipModal] = useState(false);
   const [showExportMdModal, setShowExportMdModal] = useState(false);
+  const [showZoteroModal, setShowZoteroModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // LLM Assistant & Doc states
@@ -292,6 +294,37 @@ export default function App() {
     const updated = cur.endsWith('\n') ? cur + snippet + '\n' : cur + '\n\n' + snippet + '\n';
     handleUpdateContent(updated);
     showToast('已将代码片段插入当前文件末尾');
+  };
+
+  // Zotero citation insertion handler (inserts ~\cite{key} at cursor)
+  const handleInsertZoteroCitation = (citekey: string) => {
+    const citationCode = `~\\cite{${citekey}}`;
+    if (insertSnippetRef.current) {
+      insertSnippetRef.current(citationCode);
+    } else {
+      handleInsertCodeSnippet(citationCode);
+    }
+    showToast(`已插入引用: ~\\cite{${citekey}}`);
+  };
+
+  // Zotero BibTeX synchronization handler
+  const handleZoteroBibAppended = async (citekey: string, filename: string) => {
+    if (workspace.diskPath) {
+      try {
+        const res = await fetch(`/api/workspace/load-folder?folderPath=${encodeURIComponent(workspace.diskPath)}`);
+        if (res.ok) {
+          const loaded = await res.json();
+          setWorkspace(prev => ({
+            ...prev,
+            files: loaded.files,
+            rootIds: loaded.rootIds,
+          }));
+        }
+      } catch (err) {
+        console.warn('Failed to reload workspace after bib append:', err);
+      }
+    }
+    showToast(`文献 [${citekey}] 已追加并同步至 ${filename}`);
   };
 
   // LLM direct code write / insertion handler
@@ -698,6 +731,7 @@ export default function App() {
         llmOpen={llmOpen}
         onToggleLLM={() => setLlmOpen(prev => !prev)}
         onOpenLLMDoc={() => setLlmDocOpen(true)}
+        onOpenZotero={() => setShowZoteroModal(true)}
       />
 
       {/* Main Multi-Panel Workspace: Left (Files) | Center (Editor) | Right (Preview) | LLM Assistant */}
@@ -834,6 +868,15 @@ export default function App() {
         workspace={workspace}
         activeFileContent={activeFile?.content || ''}
         activeFileName={activeFile?.name || 'main.tex'}
+      />
+
+      {/* Zotero MCP Literature Integration Modal */}
+      <ZoteroModal
+        isOpen={showZoteroModal}
+        onClose={() => setShowZoteroModal(false)}
+        onInsertCitation={handleInsertZoteroCitation}
+        onBibAppended={handleZoteroBibAppended}
+        workspacePath={workspace.diskPath}
       />
     </div>
   );

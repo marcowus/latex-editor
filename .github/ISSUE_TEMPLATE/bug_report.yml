@@ -1,0 +1,30 @@
+name: Bug report
+description: Report a reproducible problem without sharing private paper content or credentials.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: "Please remove API keys, unpublished manuscripts, and personal data before submitting."
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: List the smallest steps and synthetic input needed to reproduce the issue.
+      placeholder: "1. Start the app ... 2. Open a synthetic .tex file ... 3. Observe ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and observed behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: "v0.1.0 or commit SHA"
+    validations:
+      required: true

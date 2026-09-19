@@ -1,0 +1,44 @@
+\documentclass[journal]{IEEEtran}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+
+\newtheorem{theorem}{Theorem}
+
+\title{A Modular Control-Paper Skeleton}
+\author{Anonymous Author}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This synthetic example demonstrates a multi-file manuscript structure. It makes no experimental or theoretical claim and should be replaced with the author's verified research content.
+\end{abstract}
+
+\begin{IEEEkeywords}
+control systems, manuscript engineering, LaTeX
+\end{IEEEkeywords}
+
+\input{sections/introduction}
+
+\section{Problem Formulation}
+Consider a system with state $x(t)$ and input $u(t)$. Replace this placeholder with the precise dynamics, constraints, notation, and operating domain required by the real study.
+\begin{equation}
+  \dot{x}(t) = f(x(t),u(t)).
+  \label{eq:system}
+\end{equation}
+
+\section{Main Result}
+\begin{theorem}
+Under explicitly stated assumptions to be supplied by the author, the proposed method satisfies the stated conclusion on the specified domain.
+\end{theorem}
+\begin{IEEEproof}
+This is a structural placeholder. A real proof must state every used assumption, lemma, inequality, and conclusion boundary.
+\end{IEEEproof}
+
+\section{Conclusion}
+Replace this section with a conclusion that separates demonstrated results from limitations and future work.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

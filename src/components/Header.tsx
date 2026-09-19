@@ -42,6 +42,7 @@ interface HeaderProps {
   llmOpen?: boolean;
   onToggleLLM?: () => void;
   onOpenLLMDoc?: () => void;
+  onOpenZotero?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -65,6 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
   llmOpen,
   onToggleLLM,
   onOpenLLMDoc,
+  onOpenZotero,
 }) => {
   const [showHelp, setShowHelp] = useState(false);
 
@@ -219,6 +221,19 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <FolderArchive className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">导入 ZIP (E盘)</span>
+          </button>
+        )}
+
+        {onOpenZotero && (
+          <button
+            type="button"
+            onClick={onOpenZotero}
+            title="连接本地 Zotero MCP 文献库，检索条目并一键插入引用"
+            className="px-2.5 py-1 text-xs bg-rose-700 hover:bg-rose-600 text-white rounded flex items-center gap-1.5 font-medium shadow-2xs transition-colors"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <BookOpen className="w-3.5 h-3.5 text-rose-200" />
+            <span className="hidden sm:inline">Zotero 文献</span>
           </button>
         )}
 

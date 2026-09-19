@@ -1,6 +1,6 @@
 {
   "name": "LaTeX Editor",
-  "description": "本地实时预览 LaTeX 编辑器，提供语法高亮、工作区文件树、实时渲染预览与常规编辑功能。",
+  "description": "面向控制、自动化与工程论文作者的 AI 辅助 LaTeX 工作台，提供源码编辑、实时预览、工程文件管理与可选 LLM 写作辅助。",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

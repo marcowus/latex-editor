@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use LaTeX Editor in academic work, please cite this software."
+type: software
+title: "LaTeX Editor"
+version: 0.1.0
+date-released: 2026-09-19
+license: Apache-2.0
+url: "https://github.com/marcowus/latex-editor"
+repository-code: "https://github.com/marcowus/latex-editor"
+authors:
+  - name: "marcowus"
