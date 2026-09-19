@@ -295,6 +295,7 @@ export const LLMAssistantPanel: React.FC<LLMAssistantPanelProps> = ({
 
   const skillCategories = [
     { id: 'all', label: '全部技能' },
+    { id: 'tac', label: '🎯 TAC专栏' },
     { id: 'structure', label: '🏛️ 架构' },
     { id: 'math', label: '📐 公式' },
     { id: 'figures', label: '📊 图表' },
@@ -303,6 +304,37 @@ export const LLMAssistantPanel: React.FC<LLMAssistantPanelProps> = ({
   ];
 
   const writingSkills = [
+    // 🎯 IEEE TAC 权威控制论写作规范
+    {
+      category: 'tac',
+      label: '🎯 提炼主论题 (P0/C1-C4)',
+      prompt: '/tac-thesis 提炼论文唯一的控制主论题 P0 (针对何种系统、通过何种关键结构、克服何种瓶颈并在何种明确范围内达到何种最强结论)，并构建 C1-C4 论证依赖图',
+    },
+    {
+      category: 'tac',
+      label: '📖 TAC 引言漏斗与因果链',
+      prompt: '/tac-intro-distill 按照 IEEE TAC 控制论文规范重构引言：遵循“控制问题 -> 精确瓶颈 -> 核心控制对象 -> 理论性质 -> 闭环保证”因果链',
+    },
+    {
+      category: 'tac',
+      label: '📐 定理任务与李雅普诺夫证明',
+      prompt: '/tac-theorem-story 梳理主定理论证链条：明确定理所需前置假设、消耗的数学引理、李雅普诺夫分析证明与下游闭环保证',
+    },
+    {
+      category: 'tac',
+      label: '🔍 符号首见性与方程审计',
+      prompt: '/tac-notation-audit 严审全篇公式与符号首见性：确保每个符号首次出现时定义类型、值域、维度、单位与时标',
+    },
+    {
+      category: 'tac',
+      label: '🛡️ 消除过度防御弱语气',
+      prompt: '/tac-assertive 消除论文中“we do not claim”、“this does not imply”等反复自我防御式弱语气，改写为精准、客观断言',
+    },
+    {
+      category: 'tac',
+      label: '📋 IEEE TAC 深度审稿',
+      prompt: '/tac-review 依据 IEEE TAC 严格标准对当前稿件进行全方位审稿，输出主论题闭环、定理完整性、实验证据分级与修改建议',
+    },
     // 🏛️ 论文架构
     {
       category: 'structure',
